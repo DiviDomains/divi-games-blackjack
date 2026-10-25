@@ -1,0 +1,46 @@
+/* Blackjack: the felt, the cards and the fairness check. Everything shared with the other games is in ../brand.css. */
+
+.g-status { text-align: center; font-weight: 600; color: var(--text); margin: 4px 0; }
+.g-meta { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 14px 0; font-size: 0.875rem; }
+.g-meta dt { color: var(--muted); }
+.g-meta dd { margin: 0; overflow-wrap: anywhere; color: var(--text-2); }
+
+/* the table: a deep green felt lit from above, edged in the brand purple */
+.felt {
+  margin: 14px 0; padding: 16px; border-radius: var(--radius); color: #ecfdf5;
+  background: radial-gradient(120% 90% at 50% 0%, #1d6b4a 0%, #0f4a33 55%, #0b3626 100%);
+  border: 1px solid var(--accent-border);
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.35), 0 8px 30px rgba(0, 0, 0, 0.3);
+}
+.felt h3 { margin: 0 0 8px; font-size: 0.75rem; color: rgba(236, 253, 245, 0.75); }
+.hand-row { display: flex; gap: 8px; flex-wrap: wrap; min-height: 80px; align-items: center; margin-bottom: 12px; }
+.hand-row:last-child { margin-bottom: 0; }
+.bj-card {
+  width: 54px; height: 78px; border-radius: 9px; background: linear-gradient(180deg, #ffffff, #f1f2f8); color: #1a1a2e;
+  border: 1px solid rgba(255, 255, 255, 0.6); box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+  display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.2rem;
+}
+.bj-card.red { color: var(--x); }
+.bj-card.back {
+  background: repeating-linear-gradient(45deg, var(--accent), var(--accent) 6px, var(--accent-dark) 6px, var(--accent-dark) 12px);
+  border-color: #c7d2fe; color: transparent;
+}
+.tot { margin-left: 6px; font-weight: 700; color: #fff; }
+
+.bet-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+.bet-row label { flex: 1 1 140px; }
+
+/* the fairness check under each hand */
+.checks { list-style: none; padding: 0; margin: 8px 0; font-size: 0.875rem; }
+.checks li::before { content: "✓ "; color: var(--ok-text); font-weight: 700; }
+.checks li.bad::before { content: "✗ "; color: var(--err-text); }
+.checks li.bad { color: var(--err-text); }
+.draws { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.draws th, .draws td { text-align: left; padding: 3px 6px; border-top: 1px solid var(--line-soft); overflow-wrap: anywhere; }
+.draws th { color: var(--muted); font-weight: 600; }
+details.verify { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+details.verify summary { cursor: pointer; font-weight: 600; color: var(--text); }
+.countdown { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+details.rules { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+details.rules summary { cursor: pointer; font-weight: 600; color: var(--text); }
+details.rules ul { margin: 8px 0 0; padding-left: 20px; color: var(--muted); line-height: 1.5; }

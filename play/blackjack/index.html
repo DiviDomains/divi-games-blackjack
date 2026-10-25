@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0f0f1a">
+  <title>Blackjack · DiviGames</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="../brand.css">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="top">
+    <a class="logo" href="/play/" title="All DiviGames">
+      <span class="logo-icon"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5zm0 18.5c-3.86-.95-6.5-4.95-6.5-8.5V8.3l6.5-3.25 6.5 3.25V12c0 3.55-2.64 7.55-6.5 8.5z"/></svg></span>
+      <span class="logo-text">DiviGames</span>
+      <span class="logo-page">Blackjack</span>
+    </a>
+    <span class="spacer"></span>
+    <span class="net-badge" title="Testnet: GOLD here has no value">Testnet</span>
+    <span id="conn" class="conn" data-state="off" title="Chain connection">offline</span>
+  </header>
+
+  <section class="card wallet" aria-labelledby="wallet-h">
+    <h2 id="wallet-h" class="visually-hidden">Your play key</h2>
+    <div class="wallet-row">
+      <div class="wallet-id">
+        <span class="label">You</span>
+        <code id="me" class="addr">…</code>
+        <button id="copy-addr" class="ghost small" type="button">Copy</button>
+      </div>
+      <div class="wallet-bal">
+        <span class="label">Balance</span>
+        <strong id="balance">…</strong> <span>GOLD</span>
+        <button id="faucet" type="button">Get GOLD</button>
+      </div>
+    </div>
+    <p id="rank-line" class="muted small-text" hidden></p>
+    <p id="wallet-msg" class="msg" role="status" hidden></p>
+    <details class="keybox">
+      <summary>Play key</summary>
+      <p class="note">This is a <strong>testnet play key</strong>, made by this page and kept in this browser's
+        storage. It only holds testnet GOLD, which has no value. Export it to play from another device, or import one you already have.</p>
+      <div class="keyrow">
+        <button id="export" class="ghost" type="button">Show WIF</button>
+        <code id="wif" class="wif" hidden></code>
+      </div>
+      <form id="import" class="keyrow">
+        <label for="import-wif" class="visually-hidden">WIF to import</label>
+        <input id="import-wif" name="wif" autocomplete="off" spellcheck="false" placeholder="Paste a testnet WIF (starts with c)">
+        <button type="submit" class="ghost">Import</button>
+      </form>
+      <p id="key-msg" class="msg" role="status" hidden></p>
+    </details>
+  </section>
+
+  <main>
+    <section class="card" aria-labelledby="table-h">
+      <h2 id="table-h">Table</h2>
+      <p id="house-line" class="muted small-text"></p>
+      <div id="banner" class="banner" hidden></div>
+      <div class="felt">
+        <h3>Dealer <span id="d-tot" class="tot"></span></h3>
+        <div id="d-cards" class="hand-row"></div>
+        <h3>You <span id="p-tot" class="tot"></span></h3>
+        <div id="p-cards" class="hand-row"></div>
+      </div>
+      <p class="g-status"><span id="status"></span> <span id="status-left" class="countdown"></span></p>
+      <form id="bet-form" class="bet-row">
+        <label>Bet <span class="muted">(GOLD)</span>
+          <input name="amount" inputmode="decimal" value="1" autocomplete="off">
+        </label>
+        <label>Your seed <span class="muted">(any text, mixed into the cards)</span>
+          <input name="seed" autocomplete="off" spellcheck="false" maxlength="64">
+        </label>
+        <button type="submit" id="deal">Deal</button>
+      </form>
+      <div id="actions" class="actions" hidden>
+        <button id="hit" type="button">Hit</button>
+        <button id="stand" type="button">Stand</button>
+        <button id="double" class="ghost" type="button">Double</button>
+        <button id="refund" class="ghost" type="button" hidden>Refund</button>
+      </div>
+      <p id="msg" class="msg" role="status" hidden></p>
+
+      <details class="rules">
+        <summary>House rules</summary>
+        <ul>
+          <li>Bets are 1 to 100 GOLD. Each hand is dealt from its own shuffled 52-card deck.</li>
+          <li>The dealer draws to 17 and stands on every 17, soft 17 included.</li>
+          <li>A natural (an ace and a ten-card as your first two) pays 3:2, rounded down to the nearest 0.01 GOLD.
+            Natural against natural is a push. Any other win pays 1:1; a tie is a push.</li>
+          <li>You may double on your first two cards: you put up the bet again and get exactly one more card.</li>
+          <li>No splitting, insurance or surrender.</li>
+          <li>The dealer's second card is dealt only after you finish, so there is no peek: a dealer natural beats a
+            doubled hand and takes both stakes.</li>
+          <li>From 25 Oct 2026 08:00 UTC: if the house has not dealt your card within 5 minutes, the hand is paid its best result: 2.5x the bet,
+            or 2x on a doubled hand. If you leave your turn for 10 minutes, the house stands for you.</li>
+        </ul>
+      </details>
+      <details class="verify" id="verify">
+        <summary>Verify this hand</summary>
+        <p class="note">Your browser recomputes every card from the house's revealed preimages, your seed and the hand id,
+          and checks each preimage hashes back to the anchor the house committed before you bet. Nothing here trusts the node.</p>
+        <button id="verify-run" class="ghost" type="button">Verify now</button>
+        <ul id="checks" class="checks"></ul>
+        <table class="draws" id="draws"></table>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2>Past hands</h2>
+      <ul id="history" class="games"><li class="muted">Loading…</li></ul>
+    </section>
+  </main>
+
+  <footer class="muted small-text">Chain: <code id="chain-url"></code></footer>
+</body>
+</html>
