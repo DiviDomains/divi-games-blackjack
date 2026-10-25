@@ -1,6 +1,10 @@
 /* Blackjack: the felt, the cards and the fairness check. Everything shared with the other games is in ../brand.css. */
 
 .g-status { text-align: center; font-weight: 600; color: var(--text); margin: 4px 0; }
+.urgent { text-align: center; font-weight: 700; color: var(--warn); background: var(--warn-bg); border: 1px solid var(--warn); border-radius: 8px; padding: 8px 10px; margin: 6px 0; }
+.alert-opt { text-align: center; margin: 6px 0; font-size: 0.85rem; color: var(--text-2); }
+.alert-opt label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.alert-opt .note { margin: 4px 0 0; font-size: 0.8rem; }
 .g-meta { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 14px 0; font-size: 0.875rem; }
 .g-meta dt { color: var(--muted); }
 .g-meta dd { margin: 0; overflow-wrap: anywhere; color: var(--text-2); }

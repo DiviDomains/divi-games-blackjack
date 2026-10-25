@@ -1,0 +1,16 @@
+{
+  "name": "divi-games-blackjack",
+  "private": true,
+  "description": "Play the house for testnet GOLD. The house commits to its deck before you bet, and you can check every card afterwards.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "config": {
+    "port": 8082
+  },
+  "scripts": {
+    "start": "node serve.mjs --open"
+  }
+}

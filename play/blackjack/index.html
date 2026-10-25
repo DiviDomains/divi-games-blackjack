@@ -73,6 +73,11 @@
         <div id="p-cards" class="hand-row"></div>
       </div>
       <p class="g-status"><span id="status"></span> <span id="status-left" class="countdown"></span></p>
+      <p id="urgent" class="urgent" role="alert" hidden></p>
+      <div id="alert-opt" class="alert-opt" hidden>
+        <label><input id="alert-toggle" type="checkbox"> Tell me when it's my move</label>
+        <p id="alert-note" class="note" role="status" hidden></p>
+      </div>
       <form id="bet-form" class="bet-row">
         <label>Bet <span class="muted">(GOLD)</span>
           <input name="amount" inputmode="decimal" value="1" autocomplete="off">

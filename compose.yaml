@@ -1,0 +1,9 @@
+# docker compose up --build    then open http://localhost:8082/play/blackjack/
+# docker compose down           to stop it
+services:
+  blackjack:
+    build: .
+    # Only this computer can open it. To let your home network in too, make it "8082:8082".
+    ports:
+      - "127.0.0.1:8082:8082"
+    restart: unless-stopped

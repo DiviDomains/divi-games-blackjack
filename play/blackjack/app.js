@@ -10,9 +10,13 @@ import { Chain, Key, NETWORK, formatAmount, parseAmount, bytesToHex, localTime, 
 import { mountWallets } from '../../sdk/connect.js';
 import { showRank } from '../rank.js';
 import { cardName, total, verifyHand } from './verify.js';
+import { handAlert, shouldNotify, notifyPlan } from './alerts.js';
+import { bjRules } from '../deadlines.js';
 
 const GAME = 'blackjack';
 const KEY_STORE = 'dg.playkey.wif';
+// "Tell me when it's my move": '1' once the player has turned browser notifications on, '0' after they turn them off.
+const ALERT_STORE = 'dg.bj-alerts';
 
 const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.getElementById(id));
 
@@ -30,6 +34,8 @@ const state = {
   /** Block time from which the second rules hold: a late house pays the hand, an idle player stands. */
   v2From: Infinity,
   idleMsV2: 10 * 60 * 1000,
+  /** The idle rules as deadlines.js reads them, for the stand-for-you time in the hand alerts. */
+  rules: bjRules(null),
   height: 0,
   /** @type {string|null} */ handId: null,
   /** @type {any} */ hand: null,
@@ -39,6 +45,11 @@ const state = {
   /** @type {bigint|null} */ gold: null,
   /** The deadline the status line counts down to, or null. */
   /** @type {number|null} */ countdownTo: null,
+  /**
+   * Hand alerts: what the last look at the hand said, the last hand of mine seen live, whether notifications are on, and
+   * for which address. `looked`: the address whose hands the page has read, so a hand that shows up after that is news.
+   */
+  alert: { /** @type {string|undefined} */ kind: undefined, /** @type {string|null} */ liveId: null, notify: false, me: '', looked: '' },
 };
 
 // ---------- small helpers ----------
@@ -89,16 +100,16 @@ const errText = (/** @type {any} */ e) => (e && e.message) || String(e);
 
 // ---------- the play key ----------
 
-function storageGet() {
+function storageGet(key = KEY_STORE) {
   try {
-    return localStorage.getItem(KEY_STORE);
+    return localStorage.getItem(key);
   } catch {
     return null;
   }
 }
-function storageSet(/** @type {string} */ wif) {
+function storageSet(/** @type {string} */ value, key = KEY_STORE) {
   try {
-    localStorage.setItem(KEY_STORE, wif);
+    localStorage.setItem(key, value);
     return true;
   } catch {
     return false;
@@ -291,11 +302,13 @@ function cardEl(/** @type {number|null} */ c) {
 
 async function loadAll() {
   try {
-    const p = await chain.game(GAME, { player: state.me });
+    const me = state.me;
+    const p = await chain.game(GAME, { player: me });
     state.history = Array.isArray(p?.hands) ? p.hands : [];
     if (!state.handId) {
       const active = p?.active ? state.history.find((h) => h.id === p.active) : null;
       state.hand = active ?? state.history[state.history.length - 1] ?? null;
+      if (me === state.me) state.alert.looked = me;
     }
   } catch (e) {
     say($('msg'), `Could not load your hands: ${errText(e)}`, 'error');
@@ -409,6 +422,7 @@ function render() {
 
   renderHistory();
   renderVerify();
+  refreshAlert();
 }
 
 let lateTimer = 0;
@@ -441,8 +455,95 @@ function idleStandMs(/** @type {any} */ h) {
 function houseLate(/** @type {any} */ h) {
   const due = refundDueMs(h);
   if (due != null && Date.now() >= due) return true;
+  return lateByHeight(h);
+}
+
+/** Whether a hand from before the clock rules has waited on the house for its refund blocks. */
+function lateByHeight(/** @type {any} */ h) {
   return h.updated_ms == null && state.height >= Number(h.updated_height ?? h.created_height ?? 0) + state.timeoutBlocks;
 }
+
+// ---------- hand alerts ----------
+//
+// Every action waits on the house, so a player who has switched tabs is told by the tab title when the hand is back on
+// them, the house is late, or the hand ended. A browser notification is a local `new Notification(...)` they must ask
+// for, and it fires only while the tab is hidden. Nothing here makes a request: it reads the hand the page already has.
+
+/** Set the tab title and the urgent line from the current hand; notify when something worth leaving the tab for happened. */
+function refreshAlert() {
+  const h = state.hand;
+  if (state.alert.me !== state.me) Object.assign(state.alert, { me: state.me, kind: undefined, liveId: null }); // another key: start afresh
+  if (isMine(h) && (h.status === 'playing' || WAITING(h))) state.alert.liveId = h.id;
+  const a = handAlert(h, state.me, {
+    rules: state.rules,
+    sawLive: Boolean(h && h.id === state.alert.liveId),
+    refundDueMs: WAITING(h) ? refundDueMs(h) : null,
+    heightLate: Boolean(WAITING(h) && lateByHeight(h)),
+  });
+  if (document.title !== a.title) document.title = a.title;
+  const urgent = $('urgent');
+  urgent.hidden = !a.urgent;
+  if (urgent.textContent !== (a.urgent ? a.text : '')) urgent.textContent = a.urgent ? a.text : '';
+  if (!h) {
+    // The page has read this address's hands and it has none: a hand that shows up now is one dealt while the page
+    // watched, so it is news even if the first look at it is already on the player's move (the house dealt between two
+    // looks, as it often does on a busy host). Before that read nothing is known, and the first look is never news.
+    if (!state.handId && state.alert.looked === state.me && state.alert.kind === undefined) state.alert.kind = 'none';
+    return;
+  }
+  if (shouldNotify(/** @type {any} */ (state.alert.kind), a.kind) && state.alert.notify && document.hidden) notifyNow(a.text, h.id);
+  state.alert.kind = a.kind;
+}
+
+function notifyNow(/** @type {string} */ text, /** @type {string} */ id) {
+  try {
+    new Notification('DiviGames · blackjack', { body: text, tag: `dg-bj-${id}` });
+  } catch {
+    /* the browser refused; the title still shows it */
+  }
+}
+
+/** What this browser can do with notifications right now. */
+function notifySupport() {
+  const N = /** @type {any} */ (window).Notification;
+  return { supported: typeof N === 'function', permission: typeof N === 'function' ? String(N.permission) : 'denied' };
+}
+
+/** Show the outcome of a toggle plan: the box, the note, and whether notifications are on. */
+function applyNotifyPlan(/** @type {ReturnType<typeof notifyPlan>} */ plan) {
+  state.alert.notify = plan.on;
+  /** @type {HTMLInputElement} */ ($('alert-toggle')).checked = plan.on;
+  $('alert-note').textContent = plan.note;
+  $('alert-note').hidden = !plan.note;
+}
+
+$('alert-toggle').addEventListener('change', async (ev) => {
+  const box = /** @type {HTMLInputElement} */ (ev.currentTarget);
+  const wanted = box.checked;
+  let plan = notifyPlan({ ...notifySupport(), wanted });
+  if (plan.ask) {
+    box.disabled = true;
+    let permission = 'default';
+    try {
+      permission = String(await /** @type {any} */ (window).Notification.requestPermission());
+    } catch {
+      /* treated as not granted */
+    }
+    box.disabled = false;
+    plan = notifyPlan({ supported: true, permission, wanted });
+    if (!plan.on && !plan.note) plan.note = 'Notifications were not allowed, so none will be shown. The tab title still shows when it is your move.';
+  }
+  applyNotifyPlan(plan);
+  storageSet(plan.on ? '1' : '0', ALERT_STORE);
+});
+
+// Offer the toggle only where the browser has notifications, and restore the saved choice without asking for permission.
+{
+  $('alert-opt').hidden = !notifySupport().supported;
+  const plan = notifyPlan({ ...notifySupport(), wanted: storageGet(ALERT_STORE) === '1' });
+  applyNotifyPlan(plan.ask ? { ask: false, on: false, note: '' } : plan);
+}
+setInterval(refreshAlert, 1000); // the seconds left before the house stands for you count down
 
 function renderHistory() {
   const rows = [...state.history].reverse();
@@ -524,6 +625,7 @@ function route() {
   const id = decodeURIComponent(location.hash.replace(/^#/, '')).trim();
   state.handId = id || null;
   state.hand = null;
+  Object.assign(state.alert, { kind: undefined, looked: '' });
   say($('msg'), '');
   loadAll();
 }
@@ -602,6 +704,7 @@ async function start() {
     if (Number.isFinite(Number(view?.clock_rules_from_ms))) state.clockFrom = Number(view.clock_rules_from_ms);
     if (Number.isFinite(Number(view?.rules_v2_from_ms))) state.v2From = Number(view.rules_v2_from_ms);
     if (Number.isFinite(Number(view?.idle_ms_v2))) state.idleMsV2 = Number(view.idle_ms_v2);
+    state.rules = bjRules(view);
   } catch {
     /* defaults stand */
   }
