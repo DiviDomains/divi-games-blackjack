@@ -33,6 +33,7 @@
 
 .bet-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
 .bet-row label { flex: 1 1 140px; }
+.get-gold { margin-top: 8px; }
 
 /* the fairness check under each hand */
 .checks { list-style: none; padding: 0; margin: 8px 0; font-size: 0.875rem; }

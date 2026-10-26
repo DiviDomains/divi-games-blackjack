@@ -11,6 +11,7 @@ import { mountWallets } from '../../sdk/connect.js';
 import { showRank } from '../rank.js';
 import { cardName, total, verifyHand } from './verify.js';
 import { handAlert, shouldNotify, notifyPlan } from './alerts.js';
+import { betShort } from './funds.js';
 import { bjRules } from '../deadlines.js';
 
 const GAME = 'blackjack';
@@ -240,8 +241,23 @@ $('copy-addr').addEventListener('click', async () => {
 $('faucet').addEventListener('click', async (ev) => {
   const btn = /** @type {HTMLButtonElement} */ (ev.currentTarget);
   const r = await run({ type: 'faucet', token: 'GOLD' }, $('wallet-msg'), [btn]);
-  if (r) say($('wallet-msg'), 'GOLD received.', 'ok');
+  if (r) {
+    say($('wallet-msg'), 'GOLD received.', 'ok');
+    if (!$('bet-faucet').hidden) gotGold();
+  }
 });
+
+// The Get GOLD button beside a bet the balance can't cover: it claims as the wallet's does, and reports beside the bet.
+$('bet-faucet').addEventListener('click', async (ev) => {
+  const r = await run({ type: 'faucet', token: 'GOLD' }, $('msg'), [/** @type {HTMLButtonElement} */ (ev.currentTarget), /** @type {HTMLButtonElement} */ ($('faucet'))]);
+  if (r) gotGold();
+});
+
+/** GOLD came in after a bet was short: drop the prompt and say Deal will work now. */
+function gotGold() {
+  $('bet-faucet').hidden = true;
+  say($('msg'), 'GOLD received. Press Deal to play.', 'ok');
+}
 
 $('export').addEventListener('click', () => {
   const wif = $('wif');
@@ -403,6 +419,7 @@ function render() {
   // Controls: betting only when there is no live hand of mine
   const live = mine && (playing || WAITING(h));
   $('bet-form').hidden = Boolean(live);
+  if (live) $('bet-faucet').hidden = true;
   $('actions').hidden = !live;
   const act = Boolean(mine && playing);
   // At 21 the only sensible move is to stand, and the chain refuses a hit; Double needs the bet again in GOLD.
@@ -609,8 +626,19 @@ $('bet-form').addEventListener('submit', async (ev) => {
   } catch {
     return say(msg, 'The bet must be a GOLD amount like 1 or 2.5.', 'error');
   }
+  // Too little GOLD for the bet: say so in GOLD and point to Get GOLD, rather than sign a bet the chain will refuse.
+  const shortBy = betShort(state.gold, amount, state.decimals);
+  const getGold = $('bet-faucet');
+  if (shortBy) {
+    say(msg, shortBy, 'error');
+    getGold.hidden = false;
+    return getGold.focus();
+  }
+  getGold.hidden = true;
   const seed = seedInput().value.trim() || randomSeed();
   const r = await runDealt({ kind: 'bet', amount, seed }, msg, [/** @type {HTMLButtonElement} */ ($('deal'))]);
+  // The balance changed since the page read it: the chain's refusal shows (in GOLD, by readableError), with Get GOLD.
+  if (!r && /insufficient GOLD/.test(lastError)) getGold.hidden = false;
   if (r) {
     seedInput().value = randomSeed();
     state.handId = null;
