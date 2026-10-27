@@ -8,16 +8,21 @@
 
 import { Chain, Key, NETWORK, formatAmount, parseAmount, bytesToHex, localTime, timeLeft, readableError, setTextWithLinks, faucetFastNote } from '../../sdk/divigames.js';
 import { mountWallets } from '../../sdk/connect.js';
-import { showRank } from '../rank.js';
+import { showRank, refreshRank } from '../rank.js';
 import { cardName, total, verifyHand } from './verify.js';
 import { handAlert, shouldNotify, notifyPlan } from './alerts.js';
 import { betShort } from './funds.js';
+import { endStatus, idleStands } from './endstatus.js';
 import { bjRules } from '../deadlines.js';
 
 const GAME = 'blackjack';
 const KEY_STORE = 'dg.playkey.wif';
 // "Tell me when it's my move": '1' once the player has turned browser notifications on, '0' after they turn them off.
 const ALERT_STORE = 'dg.bj-alerts';
+// Hands the house stood for their idle players, as seen in the live feed: the hand does not say so, so this browser
+// keeps the newest few ids to still say it after a reload.
+const IDLE_STORE = 'dg.bj-idle';
+const IDLE_KEEP = 50;
 
 const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.getElementById(id));
 
@@ -51,6 +56,10 @@ const state = {
    * for which address. `looked`: the address whose hands the page has read, so a hand that shows up after that is news.
    */
   alert: { /** @type {string|undefined} */ kind: undefined, /** @type {string|null} */ liveId: null, notify: false, me: '', looked: '' },
+  /** The addresses the rank line was last read for. */
+  rankFor: '',
+  /** Ids of hands the house stood for their idle players (IDLE_STORE). */
+  idleStood: loadIdleStood(),
 };
 
 // ---------- small helpers ----------
@@ -130,6 +139,27 @@ function loadKey() {
   const k = Key.generate(NETWORK);
   storageSet(k.toWif());
   return k;
+}
+
+function loadIdleStood() {
+  try {
+    const ids = JSON.parse(storageGet(IDLE_STORE) ?? '[]');
+    return new Set(Array.isArray(ids) ? ids.map(String) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+/** Remember hands the house stood for idle players, keeping the newest IDLE_KEEP. */
+function rememberIdle(/** @type {string[]} */ ids) {
+  if (!ids.length) return;
+  for (const id of ids) {
+    state.idleStood.delete(id);
+    state.idleStood.add(id);
+  }
+  const keep = [...state.idleStood].slice(-IDLE_KEEP);
+  state.idleStood = new Set(keep);
+  storageSet(JSON.stringify(keep), IDLE_STORE);
 }
 
 // ---------- normalising chain responses (cheap defence against small naming differences) ----------
@@ -212,8 +242,14 @@ async function refreshAccount() {
     $('balance').textContent = gold(balanceOf(acct, 'GOLD'));
     const had = state.gold;
     state.gold = BigInt(balanceOf(acct, 'GOLD'));
-    showRank($('rank-line'), GAME, [state.me, state.key.address]);
-    if (had !== state.gold && state.hand?.status === 'playing') render();
+    // Read once per address; after a hand of yours finishes, onBlock asks again (refreshRank).
+    const addrs = [state.me, state.key.address];
+    if (state.rankFor !== addrs.join()) {
+      state.rankFor = addrs.join();
+      showRank($('rank-line'), GAME, addrs);
+    }
+    // Double, and the ended hand's next step (Deal or Get GOLD), depend on the balance.
+    if (had !== state.gold && state.hand) render();
   } catch (e) {
     $('balance').textContent = '?';
     say($('wallet-msg'), `Could not reach the chain: ${errText(e)}`, 'error');
@@ -389,7 +425,9 @@ function render() {
         ? `Waiting for the house to reveal the next link… If it has not by ${localTime(due)}, you can ${due >= state.v2From ? 'claim the best result your hand could have had' : 'take your stake back'}.`
         : 'Waiting for the house to reveal the next link…';
     }
-    else status = '';
+    else {
+      status = endStatus(h, state.me, { gold: state.gold, bet: formBet(), decimals: state.decimals, idle: state.idleStood.has(h.id), idleMs: state.idleMsV2 }) ?? '';
+    }
   }
   $('status').textContent = status;
   tickCountdown();
@@ -612,6 +650,19 @@ for (const k of ['hit', 'stand', 'double', 'refund']) {
   b.addEventListener('click', act(k, b));
 }
 
+const amountInput = () => /** @type {HTMLInputElement} */ (/** @type {HTMLFormElement} */ ($('bet-form')).elements.namedItem('amount'));
+
+/** The bet in the form in base units, or null while it does not read as a GOLD amount. */
+function formBet() {
+  try {
+    return parseAmount(amountInput().value.trim(), state.decimals);
+  } catch {
+    return null;
+  }
+}
+// An ended hand's status line names Deal or Get GOLD by the bet in the form, so it follows the amount as it is typed.
+amountInput().addEventListener('input', () => { if (state.hand) render(); });
+
 const randomSeed = () => bytesToHex(crypto.getRandomValues(new Uint8Array(8)));
 const seedInput = () => /** @type {HTMLInputElement} */ (/** @type {HTMLFormElement} */ ($('bet-form')).elements.namedItem('seed'));
 seedInput().value = randomSeed();
@@ -667,12 +718,17 @@ function refreshAll() {
 function onBlock(/** @type {any} */ block) {
   const h = Number(block?.header?.height);
   if (Number.isFinite(h)) state.height = h;
+  rememberIdle(idleStands(block));
   let dirty = false;
   let touchesMe = false;
+  /** Hands that ended in this block: whether one is yours is known once the history below is read. */
+  const ended = new Set();
   for (const r of block?.receipts ?? []) {
     for (const ev of r?.events ?? []) {
-      if (!String(ev?.kind ?? '').startsWith(`${GAME}.`)) continue;
+      const kind = String(ev?.kind ?? '');
+      if (!kind.startsWith(`${GAME}.`)) continue;
       dirty = true;
+      if (kind === `${GAME}.finished` || kind === `${GAME}.refunded`) ended.add(String(ev?.data?.hand ?? ''));
       const data = JSON.stringify(ev?.data ?? {});
       if (data.includes(state.me) || (state.hand && data.includes(state.hand.id))) touchesMe = true;
     }
@@ -681,7 +737,11 @@ function onBlock(/** @type {any} */ block) {
   // Reveals deal to pending hands without naming the player, so any blackjack event may be ours.
   if (dirty) {
     loadHouse();
-    loadAll();
+    loadAll().then(() => {
+      // A hand of yours is in the leaderboard once the site's indexer has read this block.
+      const mine = [...state.history, state.hand].some((x) => x && ended.has(x.id) && isMine(x));
+      if (mine && Number.isFinite(h)) refreshRank($('rank-line'), GAME, [state.me, state.key.address], h);
+    });
   } else if (state.hand) render();
 }
 
